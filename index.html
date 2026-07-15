@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Düzenleyici</title>
+  <meta name="description" content="PDF yükle, yazı sil, yazı ekle, karala, altını çiz, yazdır ve PDF olarak kaydet." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">📝</span>
+      <h1>PDF Düzenleyici</h1>
+    </div>
+
+    <div class="toolbar" id="toolbar" hidden>
+      <button class="tool-btn active" data-tool="select" title="Seç / Taşı">🖱️ Seç</button>
+      <button class="tool-btn" data-tool="text" title="Yazı Ekle">🅰️ Yazı Ekle</button>
+      <button class="tool-btn" data-tool="erase" title="Yazı Sil (beyaz kapat)">🧽 Yazı Sil</button>
+      <button class="tool-btn" data-tool="draw" title="Karalama / Kalem">✏️ Karala</button>
+      <button class="tool-btn" data-tool="highlight" title="Fosforlu İşaretle">🖍️ İşaretle</button>
+      <button class="tool-btn" data-tool="underline" title="Altını Çiz">〰️ Altını Çiz</button>
+      <button class="tool-btn" id="addImageBtn" title="Resim / PDF Ekle (CV fotoğrafı gibi)">🖼️ Resim Ekle</button>
+      <input type="file" id="imageInput" accept="image/*,.pdf,application/pdf" hidden />
+
+      <span class="opt-group" id="eraseModeWrap" hidden>
+        <button class="mode-btn active" data-emode="white" title="Beyaz ile kapat">⬜ Beyaz</button>
+        <button class="mode-btn" data-emode="paper" title="Kağıdın kendi rengini algıla ve onunla kapat">📄 Kağıt Rengi</button>
+      </span>
+
+      <span class="sep"></span>
+
+      <span class="swatches" id="swatches" title="Renk seç">
+        <button class="swatch active" data-color="#000000" style="background:#000000"></button>
+        <button class="swatch" data-color="#6b7280" style="background:#6b7280"></button>
+        <button class="swatch" data-color="#ffffff" style="background:#ffffff"></button>
+        <button class="swatch" data-color="#e11d48" style="background:#e11d48"></button>
+        <button class="swatch" data-color="#f97316" style="background:#f97316"></button>
+        <button class="swatch" data-color="#facc15" style="background:#facc15"></button>
+        <button class="swatch" data-color="#16a34a" style="background:#16a34a"></button>
+        <button class="swatch" data-color="#2563eb" style="background:#2563eb"></button>
+        <button class="swatch" data-color="#7c3aed" style="background:#7c3aed"></button>
+        <button class="swatch" data-color="#ec4899" style="background:#ec4899"></button>
+      </span>
+      <label class="opt" id="colorWrap" title="Özel renk">
+        <input type="color" id="colorPicker" value="#000000" />
+      </label>
+      <label class="opt" id="sizeWrap">
+        <input type="range" id="sizePicker" min="1" max="30" value="3" title="Kalınlık" />
+      </label>
+
+      <span class="sep"></span>
+
+      <button class="action-btn" id="undoBtn" title="Geri Al (Ctrl+Z)">↩️ Geri Al</button>
+      <button class="action-btn" id="printBtn" title="Yazdır">🖨️ Yazdır</button>
+      <button class="action-btn primary" id="saveBtn" title="PDF Olarak Kaydet">💾 PDF Kaydet</button>
+      <button class="action-btn" id="closeBtn" title="Kapat">✖ Kapat</button>
+    </div>
+
+    <button class="action-btn" id="historyBtn" title="Düzenlenen PDF geçmişi">🕘 Geçmiş</button>
+  </header>
+
+  <!-- Karşılama / yükleme ekranı -->
+  <main id="welcome" class="welcome">
+    <div class="dropzone" id="dropzone">
+      <div class="dz-icon">📄</div>
+      <h2>PDF dosyanı buraya sürükle</h2>
+      <p>veya</p>
+      <button class="action-btn primary big" id="pickFileBtn">PDF Seç</button>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden />
+      <p class="hint">Yazı sil · Yazı ekle · Karala · Altını çiz · Yazdır · PDF kaydet</p>
+    </div>
+  </main>
+
+  <!-- Düzenleme alanı -->
+  <main id="editor" class="editor" hidden>
+    <div id="pages" class="pages"></div>
+  </main>
+
+  <!-- Geçmiş paneli -->
+  <aside id="historyPanel" class="history-panel" hidden>
+    <div class="history-head">
+      <h2>🕘 Düzenlenen PDF'ler</h2>
+      <button class="action-btn" id="historyCloseBtn">✖</button>
+    </div>
+    <div id="historyList" class="history-list">
+      <p class="empty">Henüz kaydedilmiş PDF yok.</p>
+    </div>
+  </aside>
+
+  <div id="overlayBg" class="overlay-bg" hidden></div>
+
+  <!-- PDF ekleme seçimi -->
+  <div id="pdfChoiceModal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>PDF nasıl eklensin?</h3>
+      <p>Seçtiğin dosya bir PDF. İki şekilde ekleyebilirsin:</p>
+      <button class="action-btn primary" id="pdfOverlayBtn">🖼️ Üst üste koy<small>İlk sayfası resim olarak sayfanın üzerine gelir, taşıyıp boyutlandırırsın</small></button>
+      <button class="action-btn primary" id="pdfAppendBtn">📑 Alt alta ekle<small>Tüm sayfaları belgenin sonuna yeni sayfalar olarak eklenir</small></button>
+      <button class="action-btn" id="pdfCancelBtn">Vazgeç</button>
+    </div>
+  </div>
+
+  <!-- Yükleniyor göstergesi -->
+  <div id="loading" class="loading" hidden>
+    <div class="spinner"></div>
+    <p id="loadingText">Yükleniyor…</p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
