@@ -25,7 +25,7 @@ Tarayıcıda çalışan, kurulum gerektirmeyen ücretsiz bir PDF düzenleme arac
 - 🖨️ **Yazdırma**
 - 💾 **PDF olarak kaydetme** — düzenlenmiş belge pdf-lib ile yeniden oluşturulur
 - 🕘 **Geçmiş paneli** — kaydedilen PDF'ler IndexedDB'de tarayıcıda saklanır; tekrar indirilebilir veya silinebilir
-- 🔒 **Gizlilik** — hiçbir dosya sunucuya gönderilmez, her şey istemci tarafında çalışır
+- 🔒 **Gizlilik** — PDF dosyalarınız hiçbir sunucuya gönderilmez, tüm düzenleme işlemleri tarayıcıda (istemci tarafında) yapılır. *(Canlı Vercel sürümünü kullanırken de PDF'leriniz Vercel'e yüklenmez; Vercel yalnızca sitenin kendisini sunar. Tam gizlilik ve çevrimdışına yakın kullanım isterseniz projeyi yerel olarak çalıştırabilirsiniz.)*
 
 ## 🛠️ Kullanılan Teknolojiler
 
