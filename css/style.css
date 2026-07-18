@@ -165,7 +165,7 @@ body {
 }
 .opt input[type="range"] { width: 90px; cursor: pointer; }
 
-#historyBtn { margin-left: auto; }
+#changesBtn { margin-left: auto; }
 
 /* ---------- Karşılama ---------- */
 .welcome {

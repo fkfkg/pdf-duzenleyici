@@ -35,6 +35,9 @@
   const historyPanel = el("historyPanel");
   const historyList = el("historyList");
   const overlayBg = el("overlayBg");
+  const changesBtn = el("changesBtn");
+  const changesPanel = el("changesPanel");
+  const changesList = el("changesList");
 
   // ---- Durum ----
   let currentTool = "select";
@@ -48,6 +51,8 @@
     italic: false,
     underline: false,
   };
+  let changeLog = [];   // { id, page, kind: "stroke"|"dom", icon, label, time, snapshot, el }
+  let changeSeq = 0;
 
   // ================= Yardımcılar =================
 
@@ -88,6 +93,7 @@
       welcomeEl.hidden = true;
       editorEl.hidden = false;
       toolbarEl.hidden = false;
+      changesBtn.hidden = false;
       setTool("select");
     } catch (err) {
       console.error(err);
@@ -158,6 +164,9 @@
     pagesEl.innerHTML = "";
     pages = [];
     selectedBox = null;
+    changeLog = [];
+    renderChanges();
+    changesBtn.hidden = true;
   }
 
   function closeDocument() {
@@ -264,6 +273,8 @@
     let snapshot = null;
     let lastP = null;
     let eraseColor = "#ffffff";
+    let strokeSnapshot = null;
+    let strokeTool = null;
 
     overlay.addEventListener("pointerdown", (e) => {
       if (currentTool === "select") return;
@@ -277,9 +288,11 @@
       e.preventDefault();
       overlay.setPointerCapture(e.pointerId);
       drawing = true;
+      strokeTool = currentTool;
       start = toCanvasPoint(overlay, e);
       lastP = start;
       pushUndo(page);
+      strokeSnapshot = page.undoStack[page.undoStack.length - 1];
       lastEditedPage = page;
       snapshot = octx.getImageData(0, 0, overlay.width, overlay.height);
 
@@ -354,6 +367,10 @@
       }
 
       snapshot = null;
+      if (strokeSnapshot) {
+        logChange({ page, kind: "stroke", type: strokeTool, snapshot: strokeSnapshot });
+        strokeSnapshot = null;
+      }
       try { overlay.releasePointerCapture(e.pointerId); } catch (_) {}
     };
     overlay.addEventListener("pointerup", endDraw);
@@ -397,6 +414,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       box.remove();
+      removeChangeLogForEl(box);
       if (selectedBox === box) selectedBox = null;
     });
 
@@ -404,9 +422,18 @@
     page.wrap.appendChild(box);
     makeBoxDraggable(box, move, page);
 
+    let textLogged = false;
     content.addEventListener("blur", () => {
       // İçerik boşsa kutuyu kaldır
-      if (!content.innerText.replace(/\s/g, "")) box.remove();
+      if (!content.innerText.replace(/\s/g, "")) {
+        box.remove();
+        removeChangeLogForEl(box);
+        return;
+      }
+      if (!textLogged) {
+        logChange({ page, kind: "dom", type: "text", el: box });
+        textLogged = true;
+      }
     });
     content.addEventListener("pointerdown", (ev) => {
       ev.stopPropagation();
@@ -587,6 +614,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       box.remove();
+      removeChangeLogForEl(box);
     });
 
     const resize = document.createElement("button");
@@ -596,6 +624,7 @@
 
     box.append(img, del, resize);
     page.wrap.appendChild(box);
+    logChange({ page, kind: "dom", type: "image", el: box });
 
     // Taşıma: kutunun kendisinden sürükle
     let dragging = false, offX = 0, offY = 0;
@@ -854,7 +883,107 @@
     }
   }
 
+  // ---- Değişiklik günlüğü (bu belgede yapılan tekil düzenlemeler) ----
+
+  const CHANGE_LABELS = {
+    draw: { icon: "✏️", label: "Karalama" },
+    erase: { icon: "🧽", label: "Yazı silindi" },
+    highlight: { icon: "🖍️", label: "Fosforlu işaret" },
+    underline: { icon: "〰️", label: "Altı çizildi" },
+    text: { icon: "🅰️", label: "Yazı eklendi" },
+    image: { icon: "🖼️", label: "Resim eklendi" },
+  };
+
+  function pageNumberOf(page) {
+    return pages.indexOf(page) + 1;
+  }
+
+  /** Yeni bir değişikliği günlüğe ekler. kind: "stroke" (canvas'a çizilen) veya "dom" (yazı/resim kutusu). */
+  function logChange({ page, kind, type, snapshot = null, el = null }) {
+    const meta = CHANGE_LABELS[type] || { icon: "📝", label: type };
+    const entry = {
+      id: ++changeSeq,
+      page,
+      kind,
+      icon: meta.icon,
+      label: meta.label,
+      time: Date.now(),
+      snapshot,
+      el,
+    };
+    changeLog.unshift(entry);
+    renderChanges();
+    return entry;
+  }
+
+  /** Bir DOM tabanlı kutu (yazı/resim) kendi ✕ butonundan silindiğinde günlükten de temizler. */
+  function removeChangeLogForEl(domEl) {
+    const before = changeLog.length;
+    changeLog = changeLog.filter((c) => c.el !== domEl);
+    if (changeLog.length !== before) renderChanges();
+  }
+
+  function deleteChangeEntry(entry) {
+    if (entry.kind === "dom") {
+      if (entry.el) entry.el.remove();
+      if (selectedBox === entry.el) selectedBox = null;
+    } else if (entry.kind === "stroke") {
+      const idx = entry.page.undoStack.indexOf(entry.snapshot);
+      if (idx === -1) {
+        alert("Bu işlem artık geri alınamıyor (çok fazla yeni işlem yapıldı).");
+        return;
+      }
+      entry.page.octx.putImageData(entry.snapshot, 0, 0);
+      entry.page.undoStack.length = idx;
+      // Bu işlemden sonra aynı sayfada yapılan karalamalar da bu anlık görüntüye dahil, günlükten kaldırılmalı
+      changeLog = changeLog.filter(
+        (c) => !(c.kind === "stroke" && c.page === entry.page && c.id >= entry.id)
+      );
+      renderChanges();
+      return;
+    }
+    changeLog = changeLog.filter((c) => c.id !== entry.id);
+    renderChanges();
+  }
+
+  function renderChanges() {
+    changesList.innerHTML = "";
+    if (changeLog.length === 0) {
+      changesList.innerHTML = '<p class="empty">Henüz bir değişiklik yapılmadı.</p>';
+      return;
+    }
+    for (const entry of changeLog) {
+      const div = document.createElement("div");
+      div.className = "history-item";
+      div.innerHTML = `
+        <span class="name">${entry.icon} ${entry.label} — Sayfa ${pageNumberOf(entry.page)}</span>
+        <span class="date">${formatDate(entry.time)}</span>
+        <div class="row">
+          <button class="action-btn" data-act="delete">🗑️ Sil</button>
+        </div>`;
+      div.querySelector('[data-act="delete"]').addEventListener("click", () => {
+        const hasLaterStrokes =
+          entry.kind === "stroke" &&
+          changeLog.some((c) => c.kind === "stroke" && c.page === entry.page && c.id > entry.id);
+        const msg = hasLaterStrokes
+          ? "Bu değişiklik geri alınsın mı? Not: bu sayfada bundan sonra yapılan karalama/silme/işaretleme işlemleri de birlikte geri alınacak."
+          : "Bu değişiklik geri alınsın mı?";
+        if (!confirm(msg)) return;
+        deleteChangeEntry(entry);
+      });
+      changesList.appendChild(div);
+    }
+  }
+
+  function toggleChanges(show) {
+    if (show) historyPanel.hidden = true;
+    changesPanel.hidden = !show;
+    overlayBg.hidden = !show;
+    if (show) renderChanges();
+  }
+
   function toggleHistory(show) {
+    if (show) changesPanel.hidden = true;
     historyPanel.hidden = !show;
     overlayBg.hidden = !show;
     if (show) renderHistory();
@@ -988,7 +1117,12 @@
 
   el("historyBtn").addEventListener("click", () => toggleHistory(historyPanel.hidden));
   el("historyCloseBtn").addEventListener("click", () => toggleHistory(false));
-  overlayBg.addEventListener("click", () => toggleHistory(false));
+  el("changesBtn").addEventListener("click", () => toggleChanges(changesPanel.hidden));
+  el("changesCloseBtn").addEventListener("click", () => toggleChanges(false));
+  overlayBg.addEventListener("click", () => {
+    toggleHistory(false);
+    toggleChanges(false);
+  });
 
   // Dosya seçme + sürükle bırak
   el("pickFileBtn").addEventListener("click", () => fileInput.click());

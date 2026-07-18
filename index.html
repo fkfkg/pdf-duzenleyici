@@ -75,6 +75,7 @@
       <button class="action-btn" id="closeBtn" title="Kapat">✖ Kapat</button>
     </div>
 
+    <button class="action-btn" id="changesBtn" title="Bu belgede yaptığın değişiklikler" hidden>🧾 Değişiklikler</button>
     <button class="action-btn" id="historyBtn" title="Düzenlenen PDF geçmişi">🕘 Geçmiş</button>
   </header>
 
@@ -94,6 +95,17 @@
   <main id="editor" class="editor" hidden>
     <div id="pages" class="pages"></div>
   </main>
+
+  <!-- Değişiklik geçmişi paneli -->
+  <aside id="changesPanel" class="history-panel" hidden>
+    <div class="history-head">
+      <h2>🧾 Yapılan Değişiklikler</h2>
+      <button class="action-btn" id="changesCloseBtn">✖</button>
+    </div>
+    <div id="changesList" class="history-list">
+      <p class="empty">Henüz bir değişiklik yapılmadı.</p>
+    </div>
+  </aside>
 
   <!-- Geçmiş paneli -->
   <aside id="historyPanel" class="history-panel" hidden>
