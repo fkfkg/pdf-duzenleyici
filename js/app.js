@@ -27,6 +27,8 @@
   const textOptsWrap = el("textOptsWrap");
   const fontFamilyPicker = el("fontFamilyPicker");
   const fontSizePicker = el("fontSizePicker");
+  const fontDecBtn = el("fontDecBtn");
+  const fontIncBtn = el("fontIncBtn");
   const boldBtn = el("boldBtn");
   const italicBtn = el("italicBtn");
   const underlineTextBtn = el("underlineTextBtn");
@@ -676,6 +678,133 @@
 
   // ================= Birleştirme (export) =================
 
+  // ---- Zengin metin çözümleme (kısmi büyütme/küçültme, kalın/italik/altı çizili) ----
+
+  function isBlockNode(node) {
+    if (node.nodeType !== 1) return false;
+    if (node.tagName === "DIV" || node.tagName === "P") return true;
+    try { return getComputedStyle(node).display === "block"; } catch (_) { return false; }
+  }
+
+  function styleFromNode(node, inherited) {
+    const style = { ...inherited };
+    if (node.nodeType !== 1) return style;
+    const tag = node.tagName;
+    if (tag === "B" || tag === "STRONG") style.bold = true;
+    if (tag === "I" || tag === "EM") style.italic = true;
+    if (tag === "U") style.underline = true;
+    const inlineStyle = node.style;
+    if (!inlineStyle) return style;
+    if (inlineStyle.fontSize) style.fontPx = parseFloat(inlineStyle.fontSize);
+    if (inlineStyle.fontFamily) style.fontFamily = inlineStyle.fontFamily;
+    if (inlineStyle.color) style.color = inlineStyle.color;
+    if (inlineStyle.fontWeight) {
+      const fw = inlineStyle.fontWeight;
+      style.bold = fw === "bold" || fw === "bolder" || parseInt(fw, 10) >= 600;
+    }
+    if (inlineStyle.fontStyle) style.italic = inlineStyle.fontStyle === "italic";
+    if (inlineStyle.textDecoration) style.underline = inlineStyle.textDecoration.includes("underline");
+    return style;
+  }
+
+  /** tb-content içeriğini satır satır, her satırı biçim korunmuş metin parçalarına (run) ayırır. */
+  function collectRichLines(content, baseStyle) {
+    const lines = [[]];
+    function pushText(text, style) {
+      if (text) lines[lines.length - 1].push({ text, style });
+    }
+    function walk(node, inherited) {
+      node.childNodes.forEach((child) => {
+        if (child.nodeType === 3) {
+          pushText(child.textContent, inherited);
+          return;
+        }
+        if (child.nodeType !== 1) return;
+        if (child.tagName === "BR") {
+          lines.push([]);
+          return;
+        }
+        const startNewLine = isBlockNode(child) && !(lines.length === 1 && lines[0].length === 0);
+        if (startNewLine) lines.push([]);
+        walk(child, styleFromNode(child, inherited));
+      });
+    }
+    walk(content, baseStyle);
+    return lines;
+  }
+
+  function fontStringFor(style, scale) {
+    const px = Math.max(1, style.fontPx * scale);
+    return `${style.italic ? "italic " : "normal "}${style.bold ? "700" : "400"} ${px}px ${style.fontFamily}`;
+  }
+
+  /** Satırları verilen genişliğe göre kelime bazlı satır kaydırmasıyla böler. */
+  function wrapRichLine(runs, maxWidth, ctx, scale) {
+    const out = [];
+    let line = [];
+    let lineWidth = 0;
+    for (const run of runs) {
+      const parts = run.text.split(/(\s+)/).filter((p) => p !== "");
+      for (const part of parts) {
+        ctx.font = fontStringFor(run.style, scale);
+        const w = ctx.measureText(part).width;
+        if (lineWidth + w > maxWidth && line.length > 0 && part.trim() !== "") {
+          out.push(line);
+          line = [];
+          lineWidth = 0;
+        }
+        line.push({ text: part, style: run.style, width: w });
+        lineWidth += w;
+      }
+    }
+    out.push(line);
+    return out;
+  }
+
+  /** Bir yazı kutusunu, kısmi (seçili metin) biçimlendirmeler dahil, canvas'a çizer. */
+  function drawTextBox(ctx, content, x, yTop, maxWidth, scale) {
+    const baseStyle = {
+      fontPx: parseFloat(content.dataset.fontSize || content.style.fontSize || "16"),
+      fontFamily: content.dataset.fontFamily || content.style.fontFamily || "'Segoe UI', Arial, sans-serif",
+      bold: !!content.dataset.bold,
+      italic: !!content.dataset.italic,
+      underline: !!content.dataset.underline,
+      color: content.style.color || "#000",
+    };
+    const lineGroups = collectRichLines(content, baseStyle);
+    ctx.textBaseline = "top";
+
+    let y = yTop;
+    lineGroups.forEach((runs) => {
+      const wrapped = runs.length ? wrapRichLine(runs, maxWidth, ctx, scale) : [[]];
+      wrapped.forEach((tokens) => {
+        const maxPx = tokens.length
+          ? Math.max(...tokens.map((t) => t.style.fontPx)) * scale
+          : baseStyle.fontPx * scale;
+        let cx = x;
+        tokens.forEach((tok) => {
+          ctx.font = fontStringFor(tok.style, scale);
+          ctx.fillStyle = tok.style.color;
+          ctx.fillText(tok.text, cx, y);
+          if (tok.style.underline && tok.text.trim() !== "") {
+            const px = Math.max(1, tok.style.fontPx * scale);
+            const uy = y + px * 1.05;
+            ctx.save();
+            ctx.strokeStyle = tok.style.color;
+            ctx.lineWidth = Math.max(1, px * 0.06);
+            ctx.beginPath();
+            ctx.moveTo(cx, uy);
+            ctx.lineTo(cx + tok.width, uy);
+            ctx.stroke();
+            ctx.restore();
+          }
+          cx += tok.width;
+        });
+        y += maxPx * 1.25;
+      });
+    });
+  }
+
   /** Sayfayı (PDF + çizimler + yazılar) tek bir canvas'ta birleştirir. */
   function compositePage(page) {
     const out = document.createElement("canvas");
@@ -707,30 +836,8 @@
       const rect = content.getBoundingClientRect();
       const x = (rect.left - wrapRect.left) * scale;
       const yTop = (rect.top - wrapRect.top) * scale;
-      const fontPx = parseFloat(content.dataset.fontSize || content.style.fontSize || "16") * scale;
-      const fontFamily = content.dataset.fontFamily || content.style.fontFamily || "'Segoe UI', Arial, sans-serif";
-      const fontWeight = content.dataset.bold ? "700" : "400";
-      const fontStyle = content.dataset.italic ? "italic" : "normal";
-      ctx.fillStyle = content.style.color || "#000";
-      ctx.font = `${fontStyle} ${fontWeight} ${fontPx}px ${fontFamily}`;
-      ctx.textBaseline = "top";
-      const lineHeight = fontPx * 1.25;
-      text.split("\n").forEach((line, idx) => {
-        const ly = yTop + idx * lineHeight;
-        ctx.fillText(line, x, ly);
-        if (content.dataset.underline) {
-          const w = ctx.measureText(line).width;
-          const uy = ly + fontPx * 1.05;
-          ctx.save();
-          ctx.strokeStyle = ctx.fillStyle;
-          ctx.lineWidth = Math.max(1, fontPx * 0.06);
-          ctx.beginPath();
-          ctx.moveTo(x, uy);
-          ctx.lineTo(x + w, uy);
-          ctx.stroke();
-          ctx.restore();
-        }
-      });
+      const maxWidth = Math.max(20, rect.width) * scale;
+      drawTextBox(ctx, content, x, yTop, maxWidth, scale);
     });
 
     return out;
@@ -1069,6 +1176,93 @@
     return selectedBox ? selectedBox.querySelector(".tb-content") : null;
   }
 
+  /** Odaklanmış bir tb-content içinde, boş olmayan (gerçek) bir metin seçimi varsa onu döndürür. */
+  function getActiveTextSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    const anchor = range.commonAncestorContainer;
+    const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentElement;
+    const content = anchorEl ? anchorEl.closest(".tb-content") : null;
+    if (!content) return null;
+    return { sel, range, content };
+  }
+
+  /** Seçili aralığı yeni bir span ile sarar (aralık birden çok düğüme yayılsa bile). */
+  function wrapRangeInSpan(range, applyStyle) {
+    const span = document.createElement("span");
+    applyStyle(span);
+    try {
+      range.surroundContents(span);
+    } catch (_) {
+      const frag = range.extractContents();
+      span.appendChild(frag);
+      range.insertNode(span);
+    }
+    return span;
+  }
+
+  function reselect(sel, node) {
+    sel.removeAllRanges();
+    const r = document.createRange();
+    r.selectNodeContents(node);
+    sel.addRange(r);
+  }
+
+  /** Seçili metnin boyutunu, seçim yoksa tüm kutunun boyutunu ölçeklendirir. */
+  function stepFontSize(factor) {
+    const active = getActiveTextSelection();
+    if (active) {
+      const { sel, range, content } = active;
+      const startEl = range.startContainer.nodeType === 1
+        ? range.startContainer
+        : range.startContainer.parentElement;
+      const currentPx = parseFloat(getComputedStyle(startEl).fontSize) || textFormat.fontSize;
+      const newPx = Math.max(6, Math.min(300, Math.round(currentPx * factor)));
+      const span = wrapRangeInSpan(range, (s) => { s.style.fontSize = newPx + "px"; });
+      reselect(sel, span);
+      content.dispatchEvent(new Event("blur")); // önizleme metnini güncelle
+      return;
+    }
+    const content = currentTextTarget();
+    const basePx = content ? parseFloat(content.dataset.fontSize) || textFormat.fontSize : textFormat.fontSize;
+    textFormat.fontSize = Math.max(6, Math.min(300, Math.round(basePx * factor)));
+    fontSizePicker.value = textFormat.fontSize;
+    if (content) applyTextFormat(content, textFormat);
+  }
+
+  /** Seçili metne kalın/italik/altı çizili uygular, seçim yoksa tüm kutuya uygular. */
+  function toggleInlineStyle(prop, btn) {
+    const active = getActiveTextSelection();
+    if (active) {
+      const { sel, range } = active;
+      const startEl = range.startContainer.nodeType === 1
+        ? range.startContainer
+        : range.startContainer.parentElement;
+      const cs = getComputedStyle(startEl);
+      const isOn =
+        prop === "bold" ? (cs.fontWeight === "bold" || parseInt(cs.fontWeight, 10) >= 600) :
+        prop === "italic" ? cs.fontStyle === "italic" :
+        (cs.textDecorationLine || cs.textDecoration || "").includes("underline");
+      const span = wrapRangeInSpan(range, (s) => {
+        if (prop === "bold") s.style.fontWeight = isOn ? "400" : "700";
+        if (prop === "italic") s.style.fontStyle = isOn ? "normal" : "italic";
+        if (prop === "underline") s.style.textDecoration = isOn ? "none" : "underline";
+      });
+      reselect(sel, span);
+      return;
+    }
+    textFormat[prop] = !textFormat[prop];
+    btn.classList.toggle("active", textFormat[prop]);
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
+  }
+
+  // Butonlar tıklanırken contenteditable'daki metin seçiminin kaybolmaması için
+  [fontDecBtn, fontIncBtn, boldBtn, italicBtn, underlineTextBtn].forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+  });
+
   fontFamilyPicker.addEventListener("change", () => {
     textFormat.fontFamily = fontFamilyPicker.value;
     const content = currentTextTarget();
@@ -1081,26 +1275,12 @@
     if (content) applyTextFormat(content, textFormat);
   });
 
-  boldBtn.addEventListener("click", () => {
-    textFormat.bold = !textFormat.bold;
-    boldBtn.classList.toggle("active", textFormat.bold);
-    const content = currentTextTarget();
-    if (content) applyTextFormat(content, textFormat);
-  });
+  fontDecBtn.addEventListener("click", () => stepFontSize(1 / 1.15));
+  fontIncBtn.addEventListener("click", () => stepFontSize(1.15));
 
-  italicBtn.addEventListener("click", () => {
-    textFormat.italic = !textFormat.italic;
-    italicBtn.classList.toggle("active", textFormat.italic);
-    const content = currentTextTarget();
-    if (content) applyTextFormat(content, textFormat);
-  });
-
-  underlineTextBtn.addEventListener("click", () => {
-    textFormat.underline = !textFormat.underline;
-    underlineTextBtn.classList.toggle("active", textFormat.underline);
-    const content = currentTextTarget();
-    if (content) applyTextFormat(content, textFormat);
-  });
+  boldBtn.addEventListener("click", () => toggleInlineStyle("bold", boldBtn));
+  italicBtn.addEventListener("click", () => toggleInlineStyle("italic", italicBtn));
+  underlineTextBtn.addEventListener("click", () => toggleInlineStyle("underline", underlineTextBtn));
 
   // Silgi modu (Beyaz / Kağıt Rengi)
   document.querySelectorAll(".mode-btn[data-emode]").forEach((btn) => {

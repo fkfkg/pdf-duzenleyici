@@ -129,6 +129,7 @@ body {
   text-align: center;
 }
 .text-opts .mode-btn { font-size: 13px; font-weight: 700; width: 30px; text-align: center; padding: 7px 0; }
+.text-opts #fontDecBtn, .text-opts #fontIncBtn { width: 34px; font-size: 12px; }
 
 /* Seçim penceresi */
 .modal {
