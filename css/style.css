@@ -212,6 +212,11 @@ body {
   box-shadow: 0 6px 24px rgba(15, 23, 42, 0.18);
   background: #fff;
   max-width: 100%;
+  transition: box-shadow 0.2s;
+}
+
+.page-wrap.flash-highlight {
+  box-shadow: 0 0 0 4px var(--primary), 0 6px 24px rgba(15, 23, 42, 0.18);
 }
 
 .page-wrap canvas {

@@ -422,7 +422,7 @@
     page.wrap.appendChild(box);
     makeBoxDraggable(box, move, page);
 
-    let textLogged = false;
+    let textEntry = null;
     content.addEventListener("blur", () => {
       // İçerik boşsa kutuyu kaldır
       if (!content.innerText.replace(/\s/g, "")) {
@@ -430,9 +430,11 @@
         removeChangeLogForEl(box);
         return;
       }
-      if (!textLogged) {
-        logChange({ page, kind: "dom", type: "text", el: box });
-        textLogged = true;
+      if (!textEntry) {
+        textEntry = logChange({ page, kind: "dom", type: "text", el: box, text: content.innerText });
+      } else {
+        textEntry.text = content.innerText;
+        renderChanges();
       }
     });
     content.addEventListener("pointerdown", (ev) => {
@@ -899,21 +901,60 @@
   }
 
   /** Yeni bir değişikliği günlüğe ekler. kind: "stroke" (canvas'a çizilen) veya "dom" (yazı/resim kutusu). */
-  function logChange({ page, kind, type, snapshot = null, el = null }) {
+  function logChange({ page, kind, type, snapshot = null, el = null, text = "" }) {
     const meta = CHANGE_LABELS[type] || { icon: "📝", label: type };
     const entry = {
       id: ++changeSeq,
       page,
       kind,
+      type,
       icon: meta.icon,
       label: meta.label,
       time: Date.now(),
       snapshot,
       el,
+      text,
     };
     changeLog.unshift(entry);
     renderChanges();
     return entry;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function changeEntryTitle(entry) {
+    if (entry.type === "text") {
+      const preview = entry.text.trim().replace(/\s+/g, " ").slice(0, 40);
+      return preview
+        ? `🅰️ "${escapeHtml(preview)}${entry.text.trim().length > 40 ? "…" : ""}"`
+        : "🅰️ Yazı eklendi";
+    }
+    return `${entry.icon} ${entry.label}`;
+  }
+
+  /** İlgili sayfaya/kutuya kaydırır ve düzenleme için seçili hale getirir. */
+  function jumpToChange(entry) {
+    toggleChanges(false);
+    entry.page.wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (entry.kind === "dom" && entry.el) {
+      if (entry.type === "text") {
+        setTool("select");
+        selectBox(entry.el);
+        const content = entry.el.querySelector(".tb-content");
+        if (content) focusBox(content);
+      } else {
+        setTool("select");
+        entry.el.classList.add("selected");
+        setTimeout(() => entry.el.classList.remove("selected"), 1600);
+      }
+    } else {
+      entry.page.wrap.classList.add("flash-highlight");
+      setTimeout(() => entry.page.wrap.classList.remove("flash-highlight"), 900);
+    }
   }
 
   /** Bir DOM tabanlı kutu (yazı/resim) kendi ✕ butonundan silindiğinde günlükten de temizler. */
@@ -956,11 +997,13 @@
       const div = document.createElement("div");
       div.className = "history-item";
       div.innerHTML = `
-        <span class="name">${entry.icon} ${entry.label} — Sayfa ${pageNumberOf(entry.page)}</span>
+        <span class="name">${changeEntryTitle(entry)} — Sayfa ${pageNumberOf(entry.page)}</span>
         <span class="date">${formatDate(entry.time)}</span>
         <div class="row">
+          <button class="action-btn" data-act="edit" title="Sayfaya git / düzenle">✏️ Git</button>
           <button class="action-btn" data-act="delete">🗑️ Sil</button>
         </div>`;
+      div.querySelector('[data-act="edit"]').addEventListener("click", () => jumpToChange(entry));
       div.querySelector('[data-act="delete"]').addEventListener("click", () => {
         const hasLaterStrokes =
           entry.kind === "stroke" &&
