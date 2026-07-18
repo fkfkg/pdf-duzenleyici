@@ -30,6 +30,22 @@
         <button class="mode-btn" data-emode="paper" title="Kağıdın kendi rengini algıla ve onunla kapat">📄 Kağıt Rengi</button>
       </span>
 
+      <span class="opt-group text-opts" id="textOptsWrap" hidden>
+        <select id="fontFamilyPicker" class="font-select" title="Yazı tipi">
+          <option value="'Segoe UI', Arial, sans-serif">Segoe UI</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="'Times New Roman', serif">Times New Roman</option>
+          <option value="Georgia, serif">Georgia</option>
+          <option value="'Courier New', monospace">Courier New</option>
+          <option value="Verdana, sans-serif">Verdana</option>
+          <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+        </select>
+        <input type="number" id="fontSizePicker" class="font-size-input" min="8" max="120" value="16" title="Yazı boyutu" />
+        <button class="mode-btn" id="boldBtn" type="button" title="Kalın">𝐁</button>
+        <button class="mode-btn" id="italicBtn" type="button" title="İtalik">𝐼</button>
+        <button class="mode-btn" id="underlineTextBtn" type="button" title="Altı Çizili">U̲</button>
+      </span>
+
       <span class="sep"></span>
 
       <span class="swatches" id="swatches" title="Renk seç">

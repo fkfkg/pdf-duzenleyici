@@ -23,6 +23,13 @@
   const fileInput = el("fileInput");
   const colorPicker = el("colorPicker");
   const sizePicker = el("sizePicker");
+  const sizeWrap = el("sizeWrap");
+  const textOptsWrap = el("textOptsWrap");
+  const fontFamilyPicker = el("fontFamilyPicker");
+  const fontSizePicker = el("fontSizePicker");
+  const boldBtn = el("boldBtn");
+  const italicBtn = el("italicBtn");
+  const underlineTextBtn = el("underlineTextBtn");
   const loadingEl = el("loading");
   const loadingText = el("loadingText");
   const historyPanel = el("historyPanel");
@@ -34,6 +41,13 @@
   let pages = [];          // { wrap, base, overlay, octx, undoStack, ptWidth, ptHeight }
   let docName = "belge.pdf";
   let selectedBox = null;
+  let textFormat = {
+    fontFamily: fontFamilyPicker.value,
+    fontSize: Number(fontSizePicker.value),
+    bold: false,
+    italic: false,
+    underline: false,
+  };
 
   // ================= Yardımcılar =================
 
@@ -164,6 +178,8 @@
       b.classList.toggle("active", b.dataset.tool === tool)
     );
     el("eraseModeWrap").hidden = tool !== "erase";
+    textOptsWrap.hidden = tool !== "text";
+    sizeWrap.hidden = tool === "text";
     const interactive = tool === "select" || tool === "text";
     document.querySelectorAll(".textbox, .imgbox").forEach((box) => {
       box.style.pointerEvents = interactive ? "auto" : "none";
@@ -364,8 +380,7 @@
     content.contentEditable = "true";
     content.spellcheck = false;
     content.style.color = colorPicker.value;
-    content.style.fontSize = Math.max(12, Number(sizePicker.value) * 4) + "px";
-    content.dataset.fontSize = content.style.fontSize;
+    applyTextFormat(content, textFormat);
 
     const move = document.createElement("button");
     move.className = "move";
@@ -414,10 +429,45 @@
     }, 0);
   }
 
+  /** Bir tb-content öğesine yazı biçimini (tip, boyut, kalın, italik, altı çizili) uygular. */
+  function applyTextFormat(content, fmt) {
+    content.style.fontFamily = fmt.fontFamily;
+    content.style.fontSize = Math.max(8, fmt.fontSize) + "px";
+    content.style.fontWeight = fmt.bold ? "700" : "400";
+    content.style.fontStyle = fmt.italic ? "italic" : "normal";
+    content.style.textDecoration = fmt.underline ? "underline" : "none";
+    content.dataset.fontFamily = fmt.fontFamily;
+    content.dataset.fontSize = content.style.fontSize;
+    content.dataset.bold = fmt.bold ? "1" : "";
+    content.dataset.italic = fmt.italic ? "1" : "";
+    content.dataset.underline = fmt.underline ? "1" : "";
+  }
+
+  /** Seçili kutunun mevcut biçimini araç çubuğu kontrollerine ve genel biçim durumuna yansıtır. */
+  function syncTextOptsToBox(content) {
+    textFormat = {
+      fontFamily: content.dataset.fontFamily || textFormat.fontFamily,
+      fontSize: parseFloat(content.dataset.fontSize) || textFormat.fontSize,
+      bold: !!content.dataset.bold,
+      italic: !!content.dataset.italic,
+      underline: !!content.dataset.underline,
+    };
+    fontFamilyPicker.value = textFormat.fontFamily;
+    fontSizePicker.value = textFormat.fontSize;
+    boldBtn.classList.toggle("active", textFormat.bold);
+    italicBtn.classList.toggle("active", textFormat.italic);
+    underlineTextBtn.classList.toggle("active", textFormat.underline);
+  }
+
   function selectBox(box) {
     deselectBox();
     selectedBox = box;
     box.classList.add("selected");
+    const content = box.querySelector(".tb-content");
+    if (content) {
+      syncTextOptsToBox(content);
+      textOptsWrap.hidden = false;
+    }
   }
 
   function deselectBox() {
@@ -425,6 +475,7 @@
       selectedBox.classList.remove("selected");
       selectedBox = null;
     }
+    if (currentTool !== "text") textOptsWrap.hidden = true;
   }
 
   function makeBoxDraggable(box, handle, page) {
@@ -626,12 +677,28 @@
       const x = (rect.left - wrapRect.left) * scale;
       const yTop = (rect.top - wrapRect.top) * scale;
       const fontPx = parseFloat(content.dataset.fontSize || content.style.fontSize || "16") * scale;
+      const fontFamily = content.dataset.fontFamily || content.style.fontFamily || "'Segoe UI', Arial, sans-serif";
+      const fontWeight = content.dataset.bold ? "700" : "400";
+      const fontStyle = content.dataset.italic ? "italic" : "normal";
       ctx.fillStyle = content.style.color || "#000";
-      ctx.font = `${fontPx}px "Segoe UI", Arial, sans-serif`;
+      ctx.font = `${fontStyle} ${fontWeight} ${fontPx}px ${fontFamily}`;
       ctx.textBaseline = "top";
       const lineHeight = fontPx * 1.25;
       text.split("\n").forEach((line, idx) => {
-        ctx.fillText(line, x, yTop + idx * lineHeight);
+        const ly = yTop + idx * lineHeight;
+        ctx.fillText(line, x, ly);
+        if (content.dataset.underline) {
+          const w = ctx.measureText(line).width;
+          const uy = ly + fontPx * 1.05;
+          ctx.save();
+          ctx.strokeStyle = ctx.fillStyle;
+          ctx.lineWidth = Math.max(1, fontPx * 0.06);
+          ctx.beginPath();
+          ctx.moveTo(x, uy);
+          ctx.lineTo(x + w, uy);
+          ctx.stroke();
+          ctx.restore();
+        }
       });
     });
 
@@ -819,13 +886,55 @@
     document.querySelectorAll(".swatch").forEach((s) =>
       s.classList.toggle("active", s.dataset.color === colorPicker.value)
     );
+    if (selectedBox) {
+      const content = selectedBox.querySelector(".tb-content");
+      if (content) content.style.color = colorPicker.value;
+    }
+  });
+
+  // Yazı biçim seçenekleri (yazı tipi, boyut, kalın, italik, altı çizili)
+  function currentTextTarget() {
+    return selectedBox ? selectedBox.querySelector(".tb-content") : null;
+  }
+
+  fontFamilyPicker.addEventListener("change", () => {
+    textFormat.fontFamily = fontFamilyPicker.value;
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
+  });
+
+  fontSizePicker.addEventListener("input", () => {
+    textFormat.fontSize = Number(fontSizePicker.value) || textFormat.fontSize;
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
+  });
+
+  boldBtn.addEventListener("click", () => {
+    textFormat.bold = !textFormat.bold;
+    boldBtn.classList.toggle("active", textFormat.bold);
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
+  });
+
+  italicBtn.addEventListener("click", () => {
+    textFormat.italic = !textFormat.italic;
+    italicBtn.classList.toggle("active", textFormat.italic);
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
+  });
+
+  underlineTextBtn.addEventListener("click", () => {
+    textFormat.underline = !textFormat.underline;
+    underlineTextBtn.classList.toggle("active", textFormat.underline);
+    const content = currentTextTarget();
+    if (content) applyTextFormat(content, textFormat);
   });
 
   // Silgi modu (Beyaz / Kağıt Rengi)
-  document.querySelectorAll(".mode-btn").forEach((btn) => {
+  document.querySelectorAll(".mode-btn[data-emode]").forEach((btn) => {
     btn.addEventListener("click", () => {
       eraseMode = btn.dataset.emode;
-      document.querySelectorAll(".mode-btn").forEach((b) =>
+      document.querySelectorAll(".mode-btn[data-emode]").forEach((b) =>
         b.classList.toggle("active", b === btn)
       );
     });

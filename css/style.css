@@ -109,6 +109,27 @@ body {
 .mode-btn + .mode-btn { border-left: 1px solid var(--border); }
 .mode-btn.active { background: #dbeafe; color: var(--primary-dark); font-weight: 600; }
 
+/* Yazı biçim seçenekleri (yazı tipi, boyut, kalın, italik, altı çizili) */
+.text-opts { align-items: stretch; }
+.font-select {
+  border: none;
+  background: var(--panel);
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 130px;
+}
+.font-size-input {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  width: 48px;
+  padding: 0 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.text-opts .mode-btn { font-size: 13px; font-weight: 700; width: 30px; text-align: center; padding: 7px 0; }
+
 /* Seçim penceresi */
 .modal {
   position: fixed; inset: 0;
