@@ -23,6 +23,8 @@ Tarayıcıda çalışan, kurulum gerektirmeyen ücretsiz bir PDF düzenleme arac
 - 🖍️ **Fosforlu işaretleme** — yarı saydam vurgulama
 - 〰️ **Altını çizme**
 - 🖼️ **Resim / PDF ekleme** — resmi sayfanın üzerine koyup taşıyabilir ve boyutlandırabilirsiniz; PDF eklerken "üst üste koy" (ilk sayfa resim olarak) veya "alt alta ekle" (tüm sayfalar belgenin sonuna) seçenekleri
+- 🆕 ✂️ **Alan seç (taşı / kopyala)** — sayfadan dikdörtgen bir bölgeyi seçip taşınabilir/boyutlandırılabilir bir parçaya dönüştürür. **Taşı** modunda seçtiğin alanın eski yeri kağıt rengiyle otomatik kapatılır (kes-yapıştır), **Kopyala** modunda orijinali yerinde kalır (kopyala-yapıştır)
+- 🆕 🔄 **Döndürme ve otomatik eğim düzeltme** — eklenen resim/PDF ya da taşınan alan, açı slider'ı ile döndürülebilir; eğri taranmış belgelerde metin eğimi otomatik tespit edilip düzeltilmeye çalışılır (slider'dan ince ayar yapabilirsiniz)
 - ↩️ **Geri alma** — sayfa başına 25 adıma kadar (Ctrl+Z)
 - 🖨️ **Yazdırma**
 - 💾 **PDF olarak kaydetme** — düzenlenmiş belge pdf-lib ile yeniden oluşturulur; kısmi büyütme/küçültme gibi zengin metin biçimleri de kaydedilen PDF'e doğru şekilde işlenir

@@ -131,6 +131,21 @@ body {
 .text-opts .mode-btn { font-size: 13px; font-weight: 700; width: 30px; text-align: center; padding: 7px 0; }
 .text-opts #fontDecBtn, .text-opts #fontIncBtn { width: 34px; font-size: 12px; }
 
+/* Döndürme (resim/alan) */
+.rotate-opts { align-items: center; padding: 0 8px; gap: 6px; }
+.rotate-opts .rotate-ico { font-size: 15px; color: var(--muted); }
+.rotate-opts #rotateSlider { width: 96px; cursor: pointer; }
+.rotate-opts #rotateNum {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  width: 48px;
+  padding: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.rotate-opts .mode-btn { font-size: 12px; font-weight: 600; padding: 7px 8px; }
+
 /* Seçim penceresi */
 .modal {
   position: fixed; inset: 0;

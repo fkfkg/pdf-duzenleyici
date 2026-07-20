@@ -19,6 +19,7 @@
       <button class="tool-btn active" data-tool="select" title="Seç / Taşı">🖱️ Seç</button>
       <button class="tool-btn" data-tool="text" title="Yazı Ekle">🅰️ Yazı Ekle</button>
       <button class="tool-btn" data-tool="erase" title="Yazı Sil (beyaz kapat)">🧽 Yazı Sil</button>
+      <button class="tool-btn" data-tool="region" title="Alan Seç (bir bölgeyi taşı veya kopyala)">✂️ Alan Seç</button>
       <button class="tool-btn" data-tool="draw" title="Karalama / Kalem">✏️ Karala</button>
       <button class="tool-btn" data-tool="highlight" title="Fosforlu İşaretle">🖍️ İşaretle</button>
       <button class="tool-btn" data-tool="underline" title="Altını Çiz">〰️ Altını Çiz</button>
@@ -28,6 +29,11 @@
       <span class="opt-group" id="eraseModeWrap" hidden>
         <button class="mode-btn active" data-emode="white" title="Beyaz ile kapat">⬜ Beyaz</button>
         <button class="mode-btn" data-emode="paper" title="Kağıdın kendi rengini algıla ve onunla kapat">📄 Kağıt Rengi</button>
+      </span>
+
+      <span class="opt-group" id="regionModeWrap" hidden>
+        <button class="mode-btn active" data-rmode="move" title="Taşı: seçili alan taşınabilir bir parçaya dönüşür, eski yeri kağıt rengiyle kapatılır">✂️ Taşı</button>
+        <button class="mode-btn" data-rmode="copy" title="Kopyala: seçili alanın kopyası çıkar, orijinali yerinde kalır">⧉ Kopyala</button>
       </span>
 
       <span class="opt-group text-opts" id="textOptsWrap" hidden>
@@ -46,6 +52,13 @@
         <button class="mode-btn" id="boldBtn" type="button" title="Kalın">𝐁</button>
         <button class="mode-btn" id="italicBtn" type="button" title="İtalik">𝐼</button>
         <button class="mode-btn" id="underlineTextBtn" type="button" title="Altı Çizili">U̲</button>
+      </span>
+
+      <span class="opt-group rotate-opts" id="rotateWrap" hidden title="Seçili resmi/alanı döndür (eğri taramaları düzeltmek için)">
+        <span class="rotate-ico">⟳</span>
+        <input type="range" id="rotateSlider" min="-180" max="180" value="0" step="1" title="Döndürme açısı" />
+        <input type="number" id="rotateNum" min="-180" max="180" value="0" title="Açı (derece)" />
+        <button class="mode-btn" id="rotateResetBtn" type="button" title="Açıyı sıfırla">0°</button>
       </span>
 
       <span class="sep"></span>

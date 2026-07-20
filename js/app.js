@@ -32,6 +32,10 @@
   const boldBtn = el("boldBtn");
   const italicBtn = el("italicBtn");
   const underlineTextBtn = el("underlineTextBtn");
+  const rotateWrap = el("rotateWrap");
+  const rotateSlider = el("rotateSlider");
+  const rotateNum = el("rotateNum");
+  const rotateResetBtn = el("rotateResetBtn");
   const loadingEl = el("loading");
   const loadingText = el("loadingText");
   const historyPanel = el("historyPanel");
@@ -46,6 +50,7 @@
   let pages = [];          // { wrap, base, overlay, octx, undoStack, ptWidth, ptHeight }
   let docName = "belge.pdf";
   let selectedBox = null;
+  let selectedImgBox = null;  // seçili resim/alan kutusu (döndürme için)
   let textFormat = {
     fontFamily: fontFamilyPicker.value,
     fontSize: Number(fontSizePicker.value),
@@ -166,6 +171,7 @@
     pagesEl.innerHTML = "";
     pages = [];
     selectedBox = null;
+    deselectImgBox();
     changeLog = [];
     renderChanges();
     changesBtn.hidden = true;
@@ -182,6 +188,7 @@
   // ================= Araçlar =================
 
   let eraseMode = "white"; // "white" | "paper"
+  let regionMode = "move"; // "move" | "copy"
 
   function setTool(tool) {
     currentTool = tool;
@@ -189,8 +196,9 @@
       b.classList.toggle("active", b.dataset.tool === tool)
     );
     el("eraseModeWrap").hidden = tool !== "erase";
+    el("regionModeWrap").hidden = tool !== "region";
     textOptsWrap.hidden = tool !== "text";
-    sizeWrap.hidden = tool === "text";
+    sizeWrap.hidden = tool === "text" || tool === "region";
     const interactive = tool === "select" || tool === "text";
     document.querySelectorAll(".textbox, .imgbox").forEach((box) => {
       box.style.pointerEvents = interactive ? "auto" : "none";
@@ -199,6 +207,7 @@
       tool === "select" ? "default" :
       tool === "text" ? "text" : "crosshair";
     deselectBox();
+    deselectImgBox();
   }
 
   function pushUndo(page) {
@@ -266,6 +275,100 @@
     return `rgb(${Math.round(best[1] / best[0])}, ${Math.round(best[2] / best[0])}, ${Math.round(best[3] / best[0])})`;
   }
 
+  // ---- Alan seçme (taşı / kopyala) ----
+
+  /**
+   * Sayfadaki bir dikdörtgen bölgeyi (PDF + üstündeki çizimler dahil) resim olarak yakalar.
+   * Koordinatlar canvas pikselindedir. Döndürdüğü dataUrl PNG'dir (metin keskin kalsın diye).
+   */
+  function captureRegion(page, x0, y0, x1, y1) {
+    let left = Math.round(Math.min(x0, x1));
+    let top = Math.round(Math.min(y0, y1));
+    let w = Math.round(Math.abs(x1 - x0));
+    let h = Math.round(Math.abs(y1 - y0));
+    left = Math.max(0, left);
+    top = Math.max(0, top);
+    w = Math.min(page.base.width - left, w);
+    h = Math.min(page.base.height - top, h);
+    if (w < 1 || h < 1) return null;
+
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const cx = c.getContext("2d");
+    cx.drawImage(page.base, left, top, w, h, 0, 0, w, h);
+    cx.drawImage(page.overlay, left, top, w, h, 0, 0, w, h);
+    return { dataUrl: c.toDataURL("image/png"), left, top, w, h };
+  }
+
+  // ---- Otomatik eğim (skew) tespiti ----
+
+  /**
+   * Taranmış/eğri bir görüntünün metin satırlarının eğim açısını, izdüşüm profili
+   * (projection profile) yöntemiyle tahmin eder ve düzeltme açısını (derece) döndürür.
+   * Metin bulunamazsa veya eğim belirgin değilse 0 döner. Sonuç [-10, 10] ile sınırlıdır.
+   */
+  function detectSkew(src, natW, natH) {
+    try {
+      const maxDim = 500;
+      const s = Math.min(1, maxDim / Math.max(natW, natH));
+      const w = Math.max(1, Math.round(natW * s));
+      const h = Math.max(1, Math.round(natH * s));
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const cx = c.getContext("2d");
+      cx.drawImage(src, 0, 0, w, h);
+      const data = cx.getImageData(0, 0, w, h).data;
+
+      // Gri tonlama + ortalama parlaklık (eşik için)
+      const lum = new Float32Array(w * h);
+      let mean = 0;
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        lum[p] = l;
+        mean += l;
+      }
+      mean /= w * h;
+      const thr = mean * 0.75; // bundan koyu pikseller "metin"
+
+      // Koyu piksellerin merkeze göre koordinatları
+      const cxp = w / 2, cyp = h / 2;
+      const xs = [], ys = [];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (lum[y * w + x] < thr) { xs.push(x - cxp); ys.push(y - cyp); }
+        }
+      }
+      const n = xs.length;
+      if (n < 50) return 0;
+      const stride = Math.max(1, Math.floor(n / 20000));
+
+      // Her aday açı için satır izdüşümünün "keskinliğini" ölç; en keskin açı düzeltmedir.
+      const offset = h, len = 2 * h + 1;
+      let bestAngle = 0, bestScore = -1;
+      for (let deg = -10; deg <= 10; deg += 0.5) {
+        const rad = (deg * Math.PI) / 180;
+        const sin = Math.sin(rad), cos = Math.cos(rad);
+        const hist = new Float64Array(len);
+        for (let i = 0; i < n; i += stride) {
+          let b = Math.round(xs[i] * sin + ys[i] * cos) + offset;
+          if (b < 0) b = 0; else if (b >= len) b = len - 1;
+          hist[b]++;
+        }
+        let score = 0;
+        for (let b = 1; b < len; b++) {
+          const d = hist[b] - hist[b - 1];
+          score += d * d;
+        }
+        if (score > bestScore) { bestScore = score; bestAngle = deg; }
+      }
+      return Math.abs(bestAngle) < 0.5 ? 0 : bestAngle;
+    } catch (_) {
+      return 0; // getImageData güvenlik hatası vb. — sessizce düzeltme yapma
+    }
+  }
+
   // ---- Çizim olayları ----
 
   function bindDrawingEvents(page) {
@@ -284,6 +387,17 @@
       if (currentTool === "text") {
         e.preventDefault(); // tarayıcının odağı geri almasını engelle
         createTextBox(page, e);
+        return;
+      }
+
+      if (currentTool === "region") {
+        e.preventDefault();
+        overlay.setPointerCapture(e.pointerId);
+        drawing = true;
+        strokeTool = "region";
+        start = toCanvasPoint(overlay, e);
+        lastP = start;
+        snapshot = octx.getImageData(0, 0, overlay.width, overlay.height);
         return;
       }
 
@@ -327,6 +441,20 @@
         return;
       }
 
+      if (currentTool === "region") {
+        octx.putImageData(snapshot, 0, 0);
+        octx.save();
+        octx.strokeStyle = "#2563eb";
+        octx.lineWidth = 2 * RENDER_SCALE;
+        octx.setLineDash([8, 5]);
+        octx.strokeRect(
+          Math.min(start.x, p.x), Math.min(start.y, p.y),
+          Math.abs(p.x - start.x), Math.abs(p.y - start.y)
+        );
+        octx.restore();
+        return;
+      }
+
       // Dikdörtgen/çizgi araçları: önizleme için anlık görüntüyü geri yükle
       octx.putImageData(snapshot, 0, 0);
 
@@ -356,6 +484,33 @@
     const endDraw = (e) => {
       if (!drawing) return;
       drawing = false;
+
+      // Alan seç: dikdörtgeni resme çevir, "taşı" modunda eski yeri kağıt rengiyle kapat
+      if (currentTool === "region" && snapshot) {
+        octx.putImageData(snapshot, 0, 0); // kesikli önizlemeyi kaldır
+        if (lastP) {
+          const cap = captureRegion(page, start.x, start.y, lastP.x, lastP.y);
+          if (cap && cap.w > 4 && cap.h > 4) {
+            if (regionMode === "move") {
+              pushUndo(page);
+              const snap = page.undoStack[page.undoStack.length - 1];
+              octx.fillStyle = samplePaperColor(page, start.x, start.y, lastP.x, lastP.y);
+              octx.fillRect(cap.left, cap.top, cap.w, cap.h);
+              lastEditedPage = page;
+              logChange({ page, kind: "stroke", type: "erase", snapshot: snap });
+            }
+            const sc = cssScale(page);
+            const box = createImageBox(page, cap.dataUrl, cap.w, cap.h, {
+              left: cap.left / sc, top: cap.top / sc, width: cap.w / sc, type: "region",
+            });
+            setTool("select");
+            selectImgBox(box);
+          }
+        }
+        snapshot = null;
+        try { overlay.releasePointerCapture(e.pointerId); } catch (_) {}
+        return;
+      }
 
       // Kağıt rengi modunda son rengi tüm seçim çevresinden yeniden örnekle
       if (currentTool === "erase" && eraseMode === "paper" && lastP && snapshot) {
@@ -492,6 +647,7 @@
 
   function selectBox(box) {
     deselectBox();
+    deselectImgBox();
     selectedBox = box;
     box.classList.add("selected");
     const content = box.querySelector(".tb-content");
@@ -555,7 +711,7 @@
   async function handleImageFile(file) {
     showLoading("Resim hazırlanıyor…");
     try {
-      let dataUrl, natW, natH;
+      let dataUrl, natW, natH, skewSrc;
 
       if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
         // PDF seçildiyse ilk sayfasını resme çevir
@@ -568,6 +724,7 @@
         await p.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
         dataUrl = c.toDataURL("image/jpeg", JPEG_QUALITY);
         natW = vp.width; natH = vp.height;
+        skewSrc = c;
       } else {
         dataUrl = await new Promise((res, rej) => {
           const fr = new FileReader();
@@ -582,9 +739,15 @@
           probe.src = dataUrl;
         });
         natW = probe.naturalWidth; natH = probe.naturalHeight;
+        skewSrc = probe;
       }
 
-      createImageBox(mostVisiblePage(), dataUrl, natW, natH);
+      // Eğri taramaları otomatik düzelt (tespit edilen açı slider'a da yansır)
+      loadingText.textContent = "Eğim düzeltmesi kontrol ediliyor…";
+      const angle = detectSkew(skewSrc, natW, natH);
+
+      const box = createImageBox(mostVisiblePage(), dataUrl, natW, natH, { type: "image", angle });
+      selectImgBox(box);
     } catch (err) {
       console.error(err);
       alert("Resim eklenemedi. Geçerli bir resim veya PDF dosyası seçin.");
@@ -593,17 +756,21 @@
     }
   }
 
-  function createImageBox(page, dataUrl, natW, natH) {
+  function createImageBox(page, dataUrl, natW, natH, opts = {}) {
     const wrapRect = page.wrap.getBoundingClientRect();
     const maxW = wrapRect.width * 0.35;
-    const w = Math.min(natW, maxW);
+    const w = opts.width != null ? opts.width : Math.min(natW, maxW);
     const h = w * (natH / natW);
 
     const box = document.createElement("div");
     box.className = "imgbox";
-    box.style.left = Math.max(8, (wrapRect.width - w) / 2) + "px";
-    box.style.top = Math.max(8, (wrapRect.height - h) / 3) + "px";
+    box.style.left = (opts.left != null ? opts.left : Math.max(8, (wrapRect.width - w) / 2)) + "px";
+    box.style.top = (opts.top != null ? opts.top : Math.max(8, (wrapRect.height - h) / 3)) + "px";
     box.style.width = w + "px";
+
+    const angle = Number(opts.angle) || 0;
+    box.dataset.angle = angle;
+    if (angle) box.style.transform = `rotate(${angle}deg)`;
 
     const img = document.createElement("img");
     img.src = dataUrl;
@@ -617,6 +784,7 @@
     del.addEventListener("pointerdown", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
+      if (selectedImgBox === box) deselectImgBox();
       box.remove();
       removeChangeLogForEl(box);
     });
@@ -628,7 +796,7 @@
 
     box.append(img, del, resize);
     page.wrap.appendChild(box);
-    logChange({ page, kind: "dom", type: "image", el: box });
+    logChange({ page, kind: "dom", type: opts.type || "image", el: box });
 
     // Taşıma: kutunun kendisinden sürükle
     let dragging = false, offX = 0, offY = 0;
@@ -636,12 +804,12 @@
       if (e.target === del || e.target === resize) return;
       if (currentTool !== "select" && currentTool !== "text") return;
       e.preventDefault();
+      selectImgBox(box);
       dragging = true;
       const r = page.wrap.getBoundingClientRect();
       offX = e.clientX - r.left - box.offsetLeft;
       offY = e.clientY - r.top - box.offsetTop;
       box.setPointerCapture(e.pointerId);
-      box.classList.add("selected");
     });
     box.addEventListener("pointermove", (e) => {
       if (!dragging) return;
@@ -651,7 +819,6 @@
     });
     box.addEventListener("pointerup", (e) => {
       dragging = false;
-      box.classList.remove("selected");
       try { box.releasePointerCapture(e.pointerId); } catch (_) {}
     });
 
@@ -674,6 +841,36 @@
       resizing = false;
       try { resize.releasePointerCapture(e.pointerId); } catch (_) {}
     });
+
+    return box;
+  }
+
+  // ---- Resim/alan kutusu seçimi + döndürme ----
+
+  function selectImgBox(box) {
+    deselectBox(); // varsa yazı seçimini bırak
+    if (selectedImgBox && selectedImgBox !== box) selectedImgBox.classList.remove("selected");
+    selectedImgBox = box;
+    box.classList.add("selected");
+    const a = parseFloat(box.dataset.angle) || 0;
+    rotateSlider.value = a;
+    rotateNum.value = a;
+    rotateWrap.hidden = false;
+  }
+
+  function deselectImgBox() {
+    if (selectedImgBox) {
+      selectedImgBox.classList.remove("selected");
+      selectedImgBox = null;
+    }
+    rotateWrap.hidden = true;
+  }
+
+  function setImgBoxAngle(box, angle) {
+    const a = Math.max(-180, Math.min(180, Math.round(angle)));
+    box.dataset.angle = a;
+    box.style.transform = a ? `rotate(${a}deg)` : "";
+    return a;
   }
 
   // ================= Birleştirme (export) =================
@@ -817,16 +1014,20 @@
     const scale = cssScale(page);
     const wrapRect = page.wrap.getBoundingClientRect();
 
-    // Eklenen resimler — CSS konumundan canvas ölçeğine çevir
-    page.wrap.querySelectorAll(".imgbox img").forEach((img) => {
-      const r = img.getBoundingClientRect();
-      ctx.drawImage(
-        img,
-        (r.left - wrapRect.left) * scale,
-        (r.top - wrapRect.top) * scale,
-        r.width * scale,
-        r.height * scale
-      );
+    // Eklenen resimler / taşınan alanlar — döndürme (eğim düzeltmesi) dahil
+    page.wrap.querySelectorAll(".imgbox").forEach((box) => {
+      const img = box.querySelector("img");
+      if (!img) return;
+      const bx = box.offsetLeft * scale;
+      const by = box.offsetTop * scale;
+      const bw = box.offsetWidth * scale;
+      const bh = box.offsetHeight * scale;
+      const rad = ((parseFloat(box.dataset.angle) || 0) * Math.PI) / 180;
+      ctx.save();
+      ctx.translate(bx + bw / 2, by + bh / 2);
+      if (rad) ctx.rotate(rad);
+      ctx.drawImage(img, -bw / 2, -bh / 2, bw, bh);
+      ctx.restore();
     });
 
     // Yazı kutuları
@@ -1001,6 +1202,7 @@
     underline: { icon: "〰️", label: "Altı çizildi" },
     text: { icon: "🅰️", label: "Yazı eklendi" },
     image: { icon: "🖼️", label: "Resim eklendi" },
+    region: { icon: "✂️", label: "Alan taşındı / kopyalandı" },
   };
 
   function pageNumberOf(page) {
@@ -1055,8 +1257,12 @@
         if (content) focusBox(content);
       } else {
         setTool("select");
-        entry.el.classList.add("selected");
-        setTimeout(() => entry.el.classList.remove("selected"), 1600);
+        if (entry.el.classList.contains("imgbox")) {
+          selectImgBox(entry.el);
+        } else {
+          entry.el.classList.add("selected");
+          setTimeout(() => entry.el.classList.remove("selected"), 1600);
+        }
       }
     } else {
       entry.page.wrap.classList.add("flash-highlight");
@@ -1292,6 +1498,31 @@
     });
   });
 
+  // Alan modu (Taşı / Kopyala)
+  document.querySelectorAll(".mode-btn[data-rmode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      regionMode = btn.dataset.rmode;
+      document.querySelectorAll(".mode-btn[data-rmode]").forEach((b) =>
+        b.classList.toggle("active", b === btn)
+      );
+    });
+  });
+
+  // Döndürme (seçili resim/alan)
+  function applyRotateFromControl(val) {
+    if (!selectedImgBox) return;
+    const a = setImgBoxAngle(selectedImgBox, Number(val) || 0);
+    rotateSlider.value = a;
+    rotateNum.value = a;
+  }
+  rotateSlider.addEventListener("input", () => applyRotateFromControl(rotateSlider.value));
+  rotateNum.addEventListener("input", () => applyRotateFromControl(rotateNum.value));
+  rotateResetBtn.addEventListener("click", () => applyRotateFromControl(0));
+  // kontrollere basınca sayfaya tıklanmış sayılıp seçim kaybolmasın
+  [rotateSlider, rotateNum, rotateResetBtn].forEach((elm) =>
+    elm.addEventListener("pointerdown", (e) => e.stopPropagation())
+  );
+
   // Resim / PDF ekleme
   const imageInput = el("imageInput");
   const pdfChoiceModal = el("pdfChoiceModal");
@@ -1386,10 +1617,17 @@
       selectedBox.remove();
       selectedBox = null;
     }
+    if (e.key === "Delete" && selectedImgBox && !e.target.isContentEditable) {
+      const b = selectedImgBox;
+      deselectImgBox();
+      b.remove();
+      removeChangeLogForEl(b);
+    }
   });
 
-  // Sayfa boşluğuna tıklayınca yazı kutusu seçimini kaldır
+  // Sayfa boşluğuna tıklayınca yazı/resim kutusu seçimini kaldır
   document.addEventListener("pointerdown", (e) => {
     if (!e.target.closest(".textbox")) deselectBox();
+    if (!e.target.closest(".imgbox") && !e.target.closest("#rotateWrap")) deselectImgBox();
   });
 })();
