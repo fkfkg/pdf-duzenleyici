@@ -15,7 +15,7 @@ Tarayıcıda çalışan, kurulum gerektirmeyen ücretsiz bir PDF düzenleme arac
 ## ✨ Özellikler
 
 - 📄 **PDF yükleme** — sürükle-bırak veya dosya seçici ile
-- 🅰️ **Yazı ekleme** — serbest konumlu, taşınabilir yazı kutuları
+- 🅰️ **Yazı ekleme** — serbest konumlu, taşınabilir yazı kutuları; 🆕 tıkladığın satırdaki mevcut yazının **boyutunu ve rengini otomatik algılayıp** yeni yazıyı ona eşitler (form doldurur gibi), gerekirse elle değiştirebilirsin
 - 🆕 **Zengin metin biçimlendirme** — yazı tipi seçimi (Segoe UI, Arial, Times New Roman, Georgia, Courier New, Verdana, Comic Sans MS), kalın/italik/altı çizili, renk; bir kelime/cümleyi fareyle seçip **A- / A+** ile kutunun geri kalanını etkilemeden sadece o kısmı büyütüp küçültebilirsiniz — bold/italik/altı çizili de aynı şekilde sadece seçili metne uygulanabilir
 - 🆕 **Değişiklik günlüğü paneli (🧾 Değişiklikler)** — o an açık belgede yapılan her işlemi (hangi yazı eklendi, hangi sayfada, ne zaman) listeler; her satırda tek tek geri alınabilen bir Sil butonu ve o değişikliğe/kutuya doğrudan atlayıp düzenlemeye başlatan bir "✏️ Git" butonu var
 - 🧽 **Yazı silme** — beyaz ile kapatma veya kağıdın kendi rengini algılayıp onunla kapatma ("Kağıt Rengi" modu)

@@ -369,6 +369,90 @@
     }
   }
 
+  // ---- Yazı ekleme: tıklanan satırdaki mevcut yazının boyunu/rengini algıla ----
+
+  /**
+   * Tıklanan (bx, by) canvas noktasının bulunduğu metin satırının dikey yüksekliğini
+   * ve baskın metin rengini ölçer; yeni yazı kutusunu otomatik aynı boya/renge ayarlamak için.
+   * Boşluğa tıklanırsa (yakında metin yoksa) null döner.
+   */
+  function detectLineTextStyle(page, bx, by) {
+    try {
+      const ctx = page.base.getContext("2d");
+      const S = RENDER_SCALE;
+      const halfW = Math.round(160 * S); // yatay arama penceresi
+      const halfH = Math.round(55 * S);  // dikey arama penceresi
+      const left = Math.max(0, Math.round(bx - halfW));
+      const top = Math.max(0, Math.round(by - halfH));
+      const w = Math.min(page.base.width - left, halfW * 2);
+      const h = Math.min(page.base.height - top, halfH * 2);
+      if (w < 4 || h < 4) return null;
+
+      const data = ctx.getImageData(left, top, w, h).data;
+
+      // Ortalama parlaklık -> eşik (bundan koyu pikseller "metin")
+      let mean = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        mean += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      }
+      mean /= w * h;
+      const thr = mean * 0.7;
+
+      // Her satırdaki koyu piksel sayısı
+      const rowDark = new Int32Array(h);
+      for (let y = 0; y < h; y++) {
+        let cnt = 0;
+        const rowBase = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          const i = rowBase + x * 4;
+          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (lum < thr) cnt++;
+        }
+        rowDark[y] = cnt;
+      }
+
+      const minRun = Math.max(2, Math.round(w * 0.015)); // satır sayılması için asgari koyu piksel
+      const isText = (y) => y >= 0 && y < h && rowDark[y] >= minRun;
+
+      // Tıklanan satıra en yakın metin bandını bul
+      let center = Math.round(by - top);
+      if (!isText(center)) {
+        let found = -1;
+        for (let d = 1; d < h; d++) {
+          if (isText(center - d)) { found = center - d; break; }
+          if (isText(center + d)) { found = center + d; break; }
+        }
+        if (found < 0) return null;
+        center = found;
+      }
+      let bandTop = center, bandBot = center;
+      while (isText(bandTop - 1)) bandTop--;
+      while (isText(bandBot + 1)) bandBot++;
+      const bandH = bandBot - bandTop + 1; // canvas px
+      if (bandH < 3) return null;
+
+      // Banddaki koyu piksellerin ortalama rengi
+      let cr = 0, cg = 0, cb = 0, cCount = 0;
+      for (let y = bandTop; y <= bandBot; y++) {
+        const rowBase = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          const i = rowBase + x * 4;
+          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (lum < thr) { cr += data[i]; cg += data[i + 1]; cb += data[i + 2]; cCount++; }
+        }
+      }
+
+      const scale = cssScale(page); // canvas px / css px
+      // Metin bandı yüksekliği ~ font em yüksekliği; küçük düzeltmeyle CSS px font boyutu
+      let fontPx = Math.round((bandH / scale) * 1.1);
+      fontPx = Math.max(8, Math.min(120, fontPx));
+      const color = cCount ? `rgb(${Math.round(cr / cCount)}, ${Math.round(cg / cCount)}, ${Math.round(cb / cCount)})` : null;
+      return { fontSize: fontPx, color, topCanvas: top + bandTop };
+    } catch (_) {
+      return null; // getImageData güvenlik hatası vb. — otomatik ayar yapma
+    }
+  }
+
   // ---- Çizim olayları ----
 
   function bindDrawingEvents(page) {
@@ -548,13 +632,25 @@
     box.style.left = (e.clientX - wrapRect.left) + "px";
     box.style.top = (e.clientY - wrapRect.top) + "px";
 
+    // Tıklanan satırdaki mevcut yazının boyunu (ve rengini) algılayıp otomatik eşle
+    const baseRect = page.base.getBoundingClientRect();
+    const bx = (e.clientX - baseRect.left) * (page.base.width / baseRect.width);
+    const by = (e.clientY - baseRect.top) * (page.base.height / baseRect.height);
+    const detected = detectLineTextStyle(page, bx, by);
+    const fmt = detected ? { ...textFormat, fontSize: detected.fontSize } : textFormat;
+    if (detected) {
+      // Yeni yazıyı dikey olarak o satırın üstüne hizala (satır-yüksekliği boşluğunu telafi et)
+      const alignedTop = detected.topCanvas / cssScale(page) - fmt.fontSize * 0.15;
+      box.style.top = Math.max(0, alignedTop) + "px";
+    }
+
     // Düzenlenebilir içerik (silme/taşıma butonlarından ayrı)
     const content = document.createElement("div");
     content.className = "tb-content";
     content.contentEditable = "true";
     content.spellcheck = false;
-    content.style.color = colorPicker.value;
-    applyTextFormat(content, textFormat);
+    content.style.color = (detected && detected.color) ? detected.color : colorPicker.value;
+    applyTextFormat(content, fmt);
 
     const move = document.createElement("button");
     move.className = "move";
